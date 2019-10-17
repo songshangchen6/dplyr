@@ -1,4 +1,4 @@
-# dplyr (development version)
+# dplyr 0.8.4
 
 * `group_map()` is now a generic (#4576).
 
