@@ -406,6 +406,7 @@ DataMask <- R6Class("DataMask",
       private$rows <- rows
       private$data <- data
       private$caller <- caller
+      private$keys <- group_keys(data)
 
       # chunks_env has promises for all columns of data
       # the promise resolves to a list of slices (one item per group)
@@ -471,6 +472,10 @@ DataMask <- R6Class("DataMask",
 
     pick = function(vars) {
       eval_tidy(quo(tibble(!!!syms(vars))), private$mask)
+    },
+
+    current_key = function() {
+      vec_slice(keys, private$current_group)
     }
 
   ),
@@ -480,6 +485,7 @@ DataMask <- R6Class("DataMask",
     mask = NULL,
     old_vars = character(),
     rows = NULL,
+    keys = NULL,
     bindings = NULL,
     current_group = 0L,
     caller = NULL
