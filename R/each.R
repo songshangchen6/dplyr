@@ -19,8 +19,8 @@ pick <- function(...) {
 
 #' @importFrom tidyselect peek_vars vars_select
 #' @export
-by_column <- function(df, funs = identity, .name = NULL, .unpack = TRUE) {
-  colwise(funs, .name = .name, .unpack = .unpack)(df)
+by_column <- function(df, funs = identity, .unpack_to = "{fn}_{var}", .fn_in_vars = FALSE) {
+  colwise(funs, .unpack_to = .unpack_to, .fn_in_vars = .fn_in_vars)(df)
 }
 
 #' Apply a set of functions to a set of columns
@@ -36,107 +36,11 @@ by_column <- function(df, funs = identity, .name = NULL, .unpack = TRUE) {
 #'   - A single quosure style lambda, e.g. `~ mean(.x, na.rm = TRUE)`
 #'   - A named list of functions and/or lambdas
 #'
-#'  @param .name A [glue::glue()] pattern used to name the result columns.
-#'    When unspecified, the default naming depend on the other arguments
-#'
-#'  @param .unpack Whether to un pack the results in a flat data frame
-#'    or keep the results of each function packed together.
-#'
 #'  @return A tibble
 #'
-#' @examples
-#' # A single function, results are unpacked and named after the selected columns
-#' iris %>%
-#'   group_by(Species) %>%
-#'   summarise(accross(starts_with("Sepal"), mean))
-#' iris %>%
-#'   group_by(Species) %>%
-#'   summarise(accross(starts_with("Sepal"), ~mean(.x, na.rm = TRUE)))
-#'
-#'
-#' # If we leave things packed, both columns are packed in the "fn" column
-#' iris %>%
-#'   group_by(Species) %>%
-#'   summarise(accross(starts_with("Sepal"), mean, .unpack = FALSE))
-#' iris %>%
-#'   group_by(Species) %>%
-#'   summarise(accross(starts_with("Sepal"), ~mean(.x, na.rm = TRUE)), .unpack = FALSE))
-#'
-#' # we can have control on the name of pack either by using a named list of
-#' # functions or by giving a name to the expression in summarise()
-#' iris %>%
-#'   group_by(Species) %>%
-#'   summarise(packname = accross(starts_with("Sepal"), mean))
-#'
-#' # With a named list, if there are multiple columns selected
-#' # and the results are unpacked, the default name includes both the
-#' # function name and the column name, separated by an underscore
-#' iris %>%
-#'   group_by(Species) %>%
-#'   summarise(
-#'     accross(starts_with("Sepal"), list(mean = mean, sd = sd))
-#'   )
-#' # this is also the case when the list has only one function
-#' iris %>%
-#'   group_by(Species) %>%
-#'   summarise(
-#'     accross(starts_with("Sepal"), list(mean = mean))
-#'   )
-#'
-#' # If there is only one selected column, the results are named
-#' # after the function names
-#' iris %>%
-#'   group_by(Species) %>%
-#'   summarise(
-#'     accross("Sepal.Length", list(mean = mean, sd = sd))
-#'   )
-#'
-#' # When results are left packed, the packs are named after the functions
-#' # and the results within the packs are named after the columns
-#' iris %>%
-#'   group_by(Species) %>%
-#'   summarise(
-#'     accross(starts_with("Sepal"), list(mean = mean, sd = sd), .unpack = FALSE)
-#'   )
-#'
-#' # The .name parameter can be used to overwrite the defaults as seen above
-#' # with a glue pattern that may use {fn} and {var} to stand for the current
-#' # function name and column
-#' iris %>%
-#'   group_by(Species) %>%
-#'   summarise(accross(starts_with("Sepal"), mean, .name = "{toupper(var)}"))
-#'
-#' iris %>%
-#'   group_by(Species) %>%
-#'   summarise(packname = accross(starts_with("Sepal"), mean, .name = "{toupper(var)}"))
-#'
-#' iris %>%
-#'   group_by(Species) %>%
-#'   summarise(
-#'     accross(starts_with("Sepal"), list(mean = mean, sd = sd),
-#'             .name = "{toupper(fn)}_{sub('Sepal.', '', var)}"
-#'     )
-#'   )
-#'
-#' # overwritting the default so that the name of the column still appear
-#' # even though there is only one column selected
-#' iris %>%
-#'   group_by(Species) %>%
-#'   summarise(
-#'     accross("Sepal.Length", list(mean = mean, sd = sd), .name = "{fn}_{var}")
-#'   )
-#'
-#' # when results are left packed, the default is to not include the function in the
-#' # names of columns that are packed
-#' iris %>%
-#'   group_by(Species) %>%
-#'   summarise(
-#'     accross(starts_with("Sepal"), list(mean = mean, sd = sd), .unpack = FALSE, .name = "{fn}_{var}")
-#'   )
-#'
 #' @export
-accross <- function(select, funs = identity, .name = NULL, .unpack = TRUE) {
-  by_column(pick({{select}}), funs, .name = .name, .unpack = .unpack)
+accross <- function(select, funs = identity, .unpack_to = "{fn}_{var}", .fn_in_vars = FALSE) {
+  by_column(pick({{select}}), funs, .unpack_to = .unpack_to, .fn_in_vars = .fn_in_vars)
 }
 
 #' @export
@@ -148,7 +52,7 @@ current_key <- function() {
 }
 
 #' @export
-colwise <- function(funs = identity, .name = NULL, .unpack = TRUE) {
+colwise <- function(funs = identity, .unpack_to = "{fn}_{var}", .fn_in_vars = FALSE) {
   single_function <- is.function(funs) || is_formula(funs)
   if (single_function) {
     funs <- list(fn = funs)
@@ -158,32 +62,38 @@ colwise <- function(funs = identity, .name = NULL, .unpack = TRUE) {
     }
   }
   funs <- map(funs, as_function)
+  packing <- is.null(.unpack_to)
 
   function(df) {
-    if (is.null(.name)) {
-      if (!.unpack || single_function) {
-        .name <- "{var}"
-      } else if(ncol(df) == 1) {
-        .name <- "{fn}"
+    if (packing) {
+      results <- if (.fn_in_vars) {
+        map(df, function(column) {
+          as_tibble(map(funs, function(f) f(column)))
+        })
       } else {
-        .name <- "{fn}_{var}"
+        map(funs, function(f) {
+          as_tibble(map(df, f))
+        })
       }
+      tibble(!!!results)
+    } else {
+
+      results <- if (.fn_in_vars) {
+        map2(df, names(df), function(column, column_name) {
+          out <- map(funs, function(f) f(column))
+          names(out) <- glue::glue(.unpack_to, var = column_name, fn = names(out))
+          out
+        })
+      } else {
+        map2(funs, names(funs), function(f, name) {
+          out <- map(df, f)
+          names(out) <- glue::glue(.unpack_to, var = names(out), fn = name)
+          out
+        })
+      }
+
+      tibble(!!!flatten(unname(results)))
     }
 
-    if (.unpack) {
-      results <- map2(funs, names(funs), function(f, name) {
-        out <- map(df, f)
-        names(out) <- glue::glue(.name, var = names(out), fn = name)
-        out
-      })
-      tibble(!!!flatten(unname(results)))
-    } else {
-      results <- map2(funs, names(funs), function(f, name) {
-        out <- map(df, f)
-        names(out) <- glue::glue(.name, var = names(out), fn = name)
-        tibble(!!!out)
-      })
-      tibble(!!!results)
-    }
   }
 }
