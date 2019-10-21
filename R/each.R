@@ -56,6 +56,9 @@ colwise <- function(funs = identity, .unpack_to = "{fn}_{var}", .fn_in_vars = FA
   single_function <- is.function(funs) || is_formula(funs)
   if (single_function) {
     funs <- list(fn = funs)
+    # reset defaults
+    .unpack_to <- "{var}"
+    .fn_in_vars <- FALSE
   } else {
     if (is.null(names(funs))) {
       abort("funs should be a single function, a single formula, or a named list of functions or formulas")
