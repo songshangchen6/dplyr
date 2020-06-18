@@ -17,6 +17,7 @@ coverage](https://codecov.io/gh/tidyverse/dplyr/branch/master/graph/badge.svg)](
 
 ## Overview
 
+
 dplyr is a grammar of data manipulation, providing a consistent set of
 verbs that help you solve the most common data manipulation challenges:
 
